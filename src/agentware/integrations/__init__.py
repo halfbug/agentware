@@ -1,0 +1,1 @@
+"""Framework integrations (FastAPI, etc.)."""
