@@ -1,26 +1,48 @@
 # Agentware
 
-Extensible **LangGraph** multi-agent library: a base agent class you subclass, injectable prompts and tools (manual or MCP), per-message **token totals**, and optional **FastAPI** integration.
+Build LangGraph agents with a small, extensible base class. Pass your own **system prompt** and **tools** (hand-written or from MCP servers), get **token usage per message**, and plug into **FastAPI** or any Python app.
+
+**Requirements:** Python 3.10+
+
+---
 
 ## Install
 
-```bash
-# Core
-pip install agentware
+**From PyPI** (when published):
 
-# With OpenAI, MCP tools, MongoDB checkpointing, FastAPI
+```bash
+pip install agentware
+```
+
+**From GitHub:**
+
+```bash
+pip install git+https://github.com/halfbug/agentware.git
+```
+
+**Optional extras** — install only what you need:
+
+```bash
+# OpenAI or Anthropic models
+pip install agentware[openai]
+pip install agentware[anthropic]
+
+# MCP tools, MongoDB conversation memory, FastAPI helper
+pip install agentware[mcp]
+pip install agentware[mongodb]
+pip install agentware[fastapi]
+
+# Everything
 pip install agentware[openai,mcp,mongodb,fastapi]
 ```
 
-From source (development):
+Set your model API key in the environment (e.g. `OPENAI_API_KEY` for OpenAI).
 
-```bash
-git clone https://github.com/YOUR_USERNAME/agentware.git
-cd agentware
-pip install -e ".[dev,openai]"
-```
+---
 
-## Quick start
+## Use
+
+### Minimal agent
 
 ```python
 from langchain_openai import ChatOpenAI
@@ -28,60 +50,86 @@ from langchain_core.tools import tool
 from agentware import BaseLangGraphAgent
 
 @tool
-def search(q: str) -> str:
-    """Search docs."""
-    return f"Results for {q}"
+def search_docs(query: str) -> str:
+    """Search documentation."""
+    return f"Results for: {query}"
 
 agent = BaseLangGraphAgent(
     system_prompt="You are a helpful assistant.",
     llm=ChatOpenAI(model="gpt-4o-mini"),
-    tools=[search],
+    tools=[search_docs],
 )
 
-result = agent.invoke("How do I reset my password?", thread_id="user-42")
+result = agent.invoke(
+    "How do I reset my password?",
+    thread_id="user-42",  # same id = same conversation
+)
+
 print(result.content)
-print(result.token_usage.total_tokens)  # tokens for this turn
+print(result.token_usage.total_tokens)
 ```
 
-## Extend the base class
-
-Match your existing pattern: subclass, override `enrich_tool_args`, custom state:
+### Async
 
 ```python
-from typing import Any, Dict, List, Optional
-from agentware import BaseLangGraphAgent, BaseAgentState
-
-class AssistantState(BaseAgentState):
-    publication_ids: Optional[List[str]]
-
-class AIAssistantAgent(BaseLangGraphAgent):
-    state_schema = AssistantState
-
-    def enrich_tool_args(self, tool_name, args, state):
-        if tool_name == "content_search":
-            args["publication_ids_array"] = state.get("publication_ids") or self.publication_ids
-        return args
+result = await agent.ainvoke("Hello", thread_id="user-42")
 ```
 
-See [examples/custom_agent.py](examples/custom_agent.py).
+### Response fields
 
-## Token usage
+Each call returns an `AgentRunResult`:
 
-Each `invoke` / `ainvoke` returns `AgentRunResult` with `token_usage`:
+| Field | Description |
+|-------|-------------|
+| `content` | Final assistant reply (text) |
+| `token_usage.input_tokens` | Prompt tokens (this turn) |
+| `token_usage.output_tokens` | Completion tokens (this turn) |
+| `token_usage.total_tokens` | Total tokens (this turn) |
+| `token_usage.llm_calls` | How many times the LLM ran in the loop |
+| `messages` | Full message history including tool messages |
 
-| Field | Meaning |
-|-------|---------|
-| `input_tokens` | Sum of prompt tokens across LLM steps |
-| `output_tokens` | Sum of completion tokens |
-| `total_tokens` | Sum of totals |
-| `llm_calls` | Number of agent→LLM node executions |
+Token counts are summed across all LLM steps in one user message (including tool-call rounds).
 
-Usage is read from `AIMessage.usage_metadata` (standard in LangChain 0.3+). Ensure your chat model returns usage (OpenAI/Anthropic integrations do by default).
+### Constructor options
 
-## MCP tools
+| Argument | Description |
+|----------|-------------|
+| `system_prompt` | System message prepended on each LLM call |
+| `llm` | Any LangChain `BaseChatModel` (OpenAI, Anthropic, etc.) |
+| `tools` | List of `@tool` functions or LangChain tools |
+| `checkpointer` | Custom LangGraph checkpointer (advanced) |
+| `mongo_uri`, `mongo_database` | Persist conversations in MongoDB |
+
+---
+
+## Tools
+
+### Your own tools
+
+Use LangChain’s `@tool` decorator and pass them in the constructor:
+
+```python
+from langchain_core.tools import tool
+
+@tool
+def get_weather(city: str) -> str:
+    """Get weather for a city."""
+    return f"Sunny in {city}"
+
+agent = BaseLangGraphAgent(
+    system_prompt="...",
+    llm=llm,
+    tools=[get_weather],
+)
+```
+
+### MCP servers
+
+Load tools from Model Context Protocol servers:
 
 ```python
 import asyncio
+from langchain_openai import ChatOpenAI
 from agentware import BaseLangGraphAgent
 from agentware.mcp import load_mcp_tools
 
@@ -94,136 +142,147 @@ async def main():
         },
     })
     agent = BaseLangGraphAgent(
-        system_prompt="You can use MCP tools.",
-        llm=...,  # your ChatOpenAI / ChatAnthropic
+        system_prompt="You can use the provided tools.",
+        llm=ChatOpenAI(model="gpt-4o-mini"),
         tools=tools,
     )
-    result = await agent.ainvoke("List files in /tmp")
-    print(result.token_usage)
+    result = await agent.ainvoke("What files are in /tmp?")
+    print(result.content)
 
 asyncio.run(main())
 ```
 
 Requires `pip install agentware[mcp]`.
 
-## FastAPI
+---
+
+## Conversation memory
+
+Use a stable `thread_id` per user or chat session so the agent remembers prior turns:
 
 ```python
-from fastapi import FastAPI
-from agentware.integrations.fastapi import create_chat_router
-
-app = FastAPI()
-app.include_router(create_chat_router(lambda: my_agent))
-
-# POST /agent/chat
-# {"message": "hello", "thread_id": "user-1"}
-# → {"content": "...", "total_tokens": 42, ...}
+result = agent.invoke("What did I just ask?", thread_id="session-abc")
 ```
 
-Run: `uvicorn examples.fastapi_app:app --reload`
-
-## Checkpointing
-
-- Default: in-memory (`MemorySaver`)
-- MongoDB: pass `mongo_uri` and `mongo_database`, or inject a custom `checkpointer=`
+By default, history is kept in memory. For production persistence:
 
 ```python
 agent = BaseLangGraphAgent(
     system_prompt="...",
     llm=llm,
     mongo_uri="mongodb://localhost:27017",
-    mongo_database="agentware",
+    mongo_database="myapp",
 )
 ```
 
-Use the same `thread_id` per conversation to restore state.
+Requires `pip install agentware[mongodb]`.
 
-## Publish to PyPI (pip install from GitHub release)
+---
 
-### 1. Prepare GitHub repo
+## FastAPI
 
-1. Create repo `https://github.com/YOUR_USERNAME/agentware`
-2. Update `pyproject.toml`: `authors`, `[project.urls]` Homepage/Repository
-3. Push code:
+Expose your agent as an HTTP API:
+
+```python
+from fastapi import FastAPI
+from langchain_openai import ChatOpenAI
+from agentware import BaseLangGraphAgent
+from agentware.integrations.fastapi import create_chat_router
+
+def make_agent():
+    return BaseLangGraphAgent(
+        system_prompt="You are a helpful assistant.",
+        llm=ChatOpenAI(model="gpt-4o-mini"),
+        tools=[],
+    )
+
+app = FastAPI()
+app.include_router(create_chat_router(make_agent))
+```
+
+**Request** — `POST /agent/chat`:
+
+```json
+{
+  "message": "Hello",
+  "thread_id": "user-1"
+}
+```
+
+**Response:**
+
+```json
+{
+  "content": "Hi! How can I help?",
+  "input_tokens": 12,
+  "output_tokens": 8,
+  "total_tokens": 20,
+  "llm_calls": 1
+}
+```
+
+Run locally:
 
 ```bash
-git init
-git add .
-git commit -m "Initial release: LangGraph base agent framework"
-git remote add origin git@github.com:YOUR_USERNAME/agentware.git
-git push -u origin main
+pip install agentware[fastapi,openai]
+uvicorn myapp:app --reload
 ```
 
-### 2. Create PyPI account and API token
+---
 
-1. Register at [pypi.org](https://pypi.org)
-2. Account → API tokens → “Add API token” (scope: entire account or project `agentware`)
-3. Save the token (starts with `pypi-`)
+## Extend
 
-### 3. Build and upload
+Subclass `BaseLangGraphAgent` when you need custom behavior, extra graph state, or tool arguments injected at runtime.
 
-```bash
-pip install build twine
-python -m build
-twine upload dist/*
-# Username: __token__
-# Password: <your pypi API token>
+### Inject extra tool arguments
+
+Override `enrich_tool_args` to add context (user id, tenant, publication ids, etc.):
+
+```python
+from typing import Any, Dict, List, Optional
+from agentware import BaseLangGraphAgent, BaseAgentState
+
+class AIAssistantAgent(BaseLangGraphAgent):
+    def __init__(self, system_prompt: str, publication_ids: Optional[List[str]] = None, **kwargs):
+        super().__init__(system_prompt=system_prompt, tools=[...], **kwargs)
+        self.publication_ids = publication_ids or []
+
+    def enrich_tool_args(self, tool_name: str, args: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
+        if tool_name == "content_search":
+            args["publication_ids_array"] = state.get("publication_ids") or self.publication_ids
+        return args
 ```
 
-After upload, anyone can install:
+### Custom graph state
 
-```bash
-pip install agentware
+Extend `BaseAgentState` and set `state_schema` on your class:
+
+```python
+from typing import List, Optional
+from agentware import BaseAgentState, BaseLangGraphAgent
+
+class AssistantState(BaseAgentState):
+    publication_ids: Optional[List[str]]
+
+class AIAssistantAgent(BaseLangGraphAgent):
+    state_schema = AssistantState
+
+    # Pass state on invoke:
+    # agent.invoke("...", extra_state={"publication_ids": ["pub-1"]})
 ```
 
-### 4. Install directly from GitHub (before PyPI)
+### Other hooks
 
-```bash
-pip install git+https://github.com/YOUR_USERNAME/agentware.git
-# specific tag:
-pip install git+https://github.com/YOUR_USERNAME/agentware.git@v0.1.0
-```
+| Method | When to override |
+|--------|----------------|
+| `prepare_messages(messages)` | Change how messages are built before the LLM |
+| `enrich_tool_args(...)` | Add runtime fields to tool calls |
+| `_build_graph()` | Custom LangGraph nodes and edges (advanced) |
 
-### 5. Versioning and releases
+A full working example is in [examples/custom_agent.py](examples/custom_agent.py).
 
-1. Bump version in `pyproject.toml` and `src/agentware/__init__.py`
-2. Tag: `git tag v0.1.0 && git push origin v0.1.0`
-3. Create GitHub Release from the tag
-4. Rebuild and `twine upload` for each release
-
-### 6. Optional: TestPyPI first
-
-```bash
-twine upload --repository testpypi dist/*
-pip install -i https://test.pypi.org/simple/ agentware
-```
-
-## Project layout
-
-```
-agentware/
-├── pyproject.toml          # package metadata & dependencies
-├── src/agentware/
-│   ├── base.py             # BaseLangGraphAgent
-│   ├── state.py            # BaseAgentState
-│   ├── tokens.py           # Token aggregation
-│   ├── types.py            # AgentRunResult
-│   ├── mcp.py              # MCP tool loader
-│   └── integrations/
-│       └── fastapi.py
-├── examples/
-└── tests/
-
-```
-
-## Development
-
-```bash
-pip install -e ".[dev,openai]"
-pytest
-ruff check src tests
-```
+---
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
