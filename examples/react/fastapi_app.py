@@ -20,4 +20,4 @@ def make_agent() -> BaseLangGraphAgent:
 app = FastAPI(title="Agentware Example")
 app.include_router(create_chat_router(make_agent))
 
-# Run: uvicorn examples.fastapi_app:app --reload
+# Run: uvicorn examples.react.fastapi_app:app --reload

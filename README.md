@@ -4,6 +4,20 @@ Build LangGraph agents with a small, extensible base class. Pass your own **syst
 
 **Requirements:** Python 3.10+
 
+## Project layout
+
+```
+src/agentware/
+├── core/              # Shared base class, tokens, checkpointing (all agents use this)
+├── agents/            # One folder per agent (each has its own README)
+│   ├── react/         # Standard ReAct assistant (BaseLangGraphAgent)
+│   └── deep_research/ # Multi-subgraph research orchestrator
+├── tools/             # MCP and shared tool loaders
+└── integrations/      # FastAPI, etc.
+```
+
+See [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) for full details and how to add new agents.
+
 ---
 
 ## Install
@@ -230,6 +244,74 @@ uvicorn myapp:app --reload
 
 ---
 
+## Deep research (multi-agent subgraphs)
+
+`DeepResearchOrchestrator` **extends** `BaseLangGraphAgent`, so you get the same `invoke` / `ainvoke` API, **token usage**, **conversation history** (`thread_id` + checkpointer), and `enrich_tool_args` — with a multi-subgraph research workflow on top.
+
+It runs three LangGraph **subgraphs** that share the same state as the parent graph:
+
+```
+START → init → plan (subgraph) → research (subgraph) → synthesize (subgraph) → END
+```
+
+| Subgraph | Role |
+|----------|------|
+| **plan** | Breaks the topic into `research_queries` |
+| **research** | ReAct loop over your **search engine tools**; fills `findings` and `sources` |
+| **synthesize** | Writes the final report from accumulated findings |
+
+### Shared state
+
+Parent and subgraphs all use `DeepResearchState`:
+
+- **Lists** (append across steps): `research_queries`, `findings`, `sources`, `messages`
+- **Shared array**: `shared_variables` — `[{"key": "...", "value": ...}, ...]` merged by key across graphs
+
+```python
+from langchain_openai import ChatOpenAI
+from langchain_core.tools import tool
+from agentware import DeepResearchOrchestrator, SharedVariable
+
+@tool
+def web_search(query: str) -> str:
+    """Search the web."""
+    return f"Results for {query}"
+
+@tool
+def news_search(query: str) -> str:
+    """Search news."""
+    return f"News for {query}"
+
+orchestrator = DeepResearchOrchestrator(
+    llm=ChatOpenAI(model="gpt-4o-mini"),
+    search_tools=[web_search, news_search],  # one or more search tools
+    max_research_rounds=5,
+)
+
+result = orchestrator.research(
+    "Latest advances in quantum error correction",
+    thread_id="session-1",
+    shared_variables=[
+        SharedVariable(key="locale", value="en"),
+        SharedVariable(key="depth", value="deep"),
+    ],
+)
+
+print(result.content)              # final report
+print(result.research_queries)     # planned sub-queries
+print(result.findings)             # raw research notes
+print(result.token_usage.total_tokens)
+print(result.shared_variables)     # includes phase: complete
+```
+
+Async: `await orchestrator.aresearch(topic, ...)` or `await orchestrator.ainvoke(topic, ...)`.
+
+Pass MCP-loaded search tools the same way as manual tools. Override `enrich_tool_args` on a subclass, or pass an `enrich_tool_args` callback, to inject API keys or tenant into search tool calls.
+
+See [examples/deep_research/run.py](examples/deep_research/run.py) and [src/agentware/agents/deep_research/README.md](src/agentware/agents/deep_research/README.md).
+
+---
+
 ## Extend
 
 Subclass `BaseLangGraphAgent` when you need custom behavior, extra graph state, or tool arguments injected at runtime.
@@ -279,7 +361,7 @@ class AIAssistantAgent(BaseLangGraphAgent):
 | `enrich_tool_args(...)` | Add runtime fields to tool calls |
 | `_build_graph()` | Custom LangGraph nodes and edges (advanced) |
 
-A full working example is in [examples/custom_agent.py](examples/custom_agent.py).
+A full working example is in [examples/react/custom_agent.py](examples/react/custom_agent.py).
 
 ---
 

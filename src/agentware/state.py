@@ -1,22 +1,5 @@
-"""Default LangGraph state schema for agents."""
+"""Backward compatibility — use ``agentware.core.state``."""
 
-from __future__ import annotations
+from agentware.core.state import BaseAgentState
 
-import operator
-from typing import Annotated, List, Optional
-
-from langchain_core.messages import AnyMessage
-from typing_extensions import TypedDict
-
-
-class BaseAgentState(TypedDict, total=False):
-    """Default state passed through the agent graph.
-
-    Extend this TypedDict in your own module for agent-specific fields, e.g.:
-
-        class MyState(BaseAgentState):
-            publication_ids: Optional[List[str]]
-    """
-
-    messages: Annotated[List[AnyMessage], operator.add]
-    llm_calls: int
+__all__ = ["BaseAgentState"]

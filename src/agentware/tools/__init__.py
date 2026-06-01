@@ -1,4 +1,4 @@
-"""Backward compatibility — use ``agentware.tools.mcp``."""
+"""Tool loaders and integrations (MCP, etc.)."""
 
 from agentware.tools.mcp import load_mcp_tools
 

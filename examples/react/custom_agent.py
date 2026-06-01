@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import operator
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-from langchain_core.messages import AnyMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
-from typing_extensions import TypedDict
 
 from agentware import BaseLangGraphAgent, BaseAgentState
 

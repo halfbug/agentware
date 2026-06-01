@@ -6,8 +6,8 @@ from typing import Any, Callable, Optional, Type
 
 from pydantic import BaseModel, Field
 
-from agentware.base import BaseLangGraphAgent
-from agentware.types import AgentRunResult
+from agentware.core.base import BaseLangGraphAgent
+from agentware.core.types import AgentRunResult
 
 
 class ChatRequest(BaseModel):
