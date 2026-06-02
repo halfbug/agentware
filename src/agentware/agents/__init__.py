@@ -6,10 +6,12 @@ from agentware.agents.deep_research import (
     DeepResearchState,
     SharedVariable,
 )
+from agentware.agents.react import ReactAgent
 
 __all__ = [
     "DeepResearchOrchestrator",
     "DeepResearchResult",
     "DeepResearchState",
+    "ReactAgent",
     "SharedVariable",
 ]

@@ -2,7 +2,7 @@
 
 The standard **single-agent** pattern: one LLM, optional tools, ReAct loop (agent → tools → agent).
 
-This is not a separate package class — you use **`BaseLangGraphAgent`** from `agentware.core` directly or subclass it.
+Use `ReactAgent` from this folder (a thin wrapper over `BaseLangGraphAgent`) when you want an explicit agent package path.
 
 ## When to use
 
@@ -15,14 +15,14 @@ This is not a separate package class — you use **`BaseLangGraphAgent`** from `
 ```python
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
-from agentware import BaseLangGraphAgent
+from agentware.agents.react import ReactAgent
 
 @tool
 def search(q: str) -> str:
     """Search docs."""
     return f"Results for {q}"
 
-agent = BaseLangGraphAgent(
+agent = ReactAgent(
     system_prompt="You are helpful.",
     llm=ChatOpenAI(model="gpt-4o-mini"),
     tools=[search],

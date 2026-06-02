@@ -12,6 +12,7 @@ agentware/
 ├── tests/
 │   ├── core/
 │   └── agents/
+│       ├── react/
 │       └── deep_research/
 ├── pyproject.toml
 └── src/agentware/
@@ -29,8 +30,10 @@ agentware/
     │
     ├── agents/               # ★ One folder per agent
     │   ├── README.md
-    │   ├── react/            # Docs for standard ReAct pattern
-    │   │   └── README.md
+    │   ├── react/
+    │   │   ├── README.md
+    │   │   ├── __init__.py
+    │   │   └── agent.py
     │   └── deep_research/
     │       ├── README.md
     │       ├── agent.py

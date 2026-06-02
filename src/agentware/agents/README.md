@@ -6,7 +6,7 @@ Each agent lives in its **own folder** with code, tests, examples, and a README.
 
 | Agent | Folder | Description |
 |-------|--------|-------------|
-| **ReAct assistant** | [react/](react/) | Single agent with tools — subclass `BaseLangGraphAgent` |
+| **ReAct assistant** | [react/](react/) | Single agent with tools — `ReactAgent` wrapper over `BaseLangGraphAgent` |
 | **Deep research** | [deep_research/](deep_research/) | Multi-subgraph orchestrator with search tools |
 
 ## Adding a new agent
